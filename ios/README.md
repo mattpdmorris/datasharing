@@ -1,0 +1,93 @@
+# Global Fund Explorer (iOS)
+
+A SwiftUI app for browsing Global Fund grant data from the public
+[Global Fund Data Service](https://data-service.theglobalfund.org) OData API.
+
+## What it does
+
+| Tab | Screens |
+| --- | --- |
+| **Countries** | Portfolio totals, searchable country and area list, pinned countries (swipe a row to pin it), pull to refresh |
+| Country detail | Signed, disbursed, grant and active-grant totals, a chart of signed vs disbursed by component, grants grouped by disease with an "active only" filter |
+| Grant detail | Principal recipient, status, cycle, programme dates, signed, committed and disbursed amounts, disbursement chart (each payment plus the running total), payment list |
+| **Grants** | Search every grant by number, country, recipient or component, filtered by component and active status |
+| **About** | Data source and disclaimer, refresh and clear-cache controls, an editable API base URL |
+
+Grant data is cached on the device and refreshed at most once a day. Pull to
+refresh or tap **Refresh now** to force it. Disbursements are fetched per grant
+when you open it.
+
+## Build and run
+
+Requirements: macOS with **Xcode 15 or later**, targeting **iOS 17 or later**.
+
+```sh
+brew install xcodegen
+cd ios
+xcodegen generate
+open GlobalFundExplorer.xcodeproj
+```
+
+In Xcode, select the `GlobalFundExplorer` target, set your team under
+**Signing & Capabilities**, change the bundle ID from `org.example.GlobalFundExplorer`,
+then run on a simulator or device. Press **⌘U** to run the tests.
+
+**Without XcodeGen:** create a new iOS App project in Xcode (SwiftUI, Swift),
+delete its generated `ContentView.swift` and `<Name>App.swift`, and drag the
+`GlobalFundExplorer/` folder into the project. Do the same with
+`GlobalFundExplorerTests/` into a Unit Testing Bundle target.
+
+## Check the API names first
+
+This code was written without live access to the API, so **the entity set and
+field names are best-effort and not yet verified.** All of them are in one
+file:
+
+- `GlobalFundExplorer/API/APIConfig.swift`: base URL and version, entity sets
+  (`VGrantAgreements`, `VGrantAgreementDisbursements`), the field used to filter
+  disbursements, and a list of candidate JSON keys for each value.
+
+To check them:
+
+1. Open the API documentation or explorer on the Data Service portal and note
+   the current version (for example `v3.3` or `v4`) and entity set names.
+2. Fetch a sample row in a browser, for example
+   `https://fetch.theglobalfund.org/v3.3/odata/VGrantAgreements?$top=1`.
+3. Compare its keys with `APIConfig.Fields`. The first matching candidate wins,
+   case-insensitively, so you can add the real key to the front of each list.
+
+If a screen shows **HTTP 404**, the version or entity set name has changed. You
+can change the base URL in the app's **About** tab without rebuilding.
+
+## Structure
+
+```
+GlobalFundExplorer/
+  App/          App entry point and tab layout
+  API/          APIConfig (all API names), OData client with paging, tolerant JSON mapping
+  Models/       Grant, Disbursement, CountrySummary, Disease
+  Store/        GrantStore (observable app state, pins) and DiskCache (offline copy)
+  Views/        Country list and detail, grant detail and search, settings
+  Support/      Formatting helpers and preview-only sample data
+GlobalFundExplorerTests/
+  Field mapping, date parsing, grouping, and API paging and filtering against a mock URL protocol
+```
+
+## How to read the data
+
+- Amounts are in **US dollars at the Global Fund reference rate**.
+- **Signed** is the amount in the grant agreement. **Committed** is what the
+  Global Fund has formally set aside. **Disbursed** is what has actually been
+  paid. Keep these labels distinct.
+- Multi-country grants appear under their multi-country "area" name, not a
+  single country.
+
+## Before releasing
+
+- Read the Data Service terms of use and follow its licence and attribution
+  requirements. The About screen already credits the source and says the app
+  isn't endorsed by the Global Fund.
+- Add an app icon (an `Assets.xcassets` with an `AppIcon` set).
+- Apple rejects apps that only wrap a website. The offline cache, charts and
+  pins count as value the app adds; alerts for new disbursements on pinned
+  countries would be a natural next feature.

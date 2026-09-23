@@ -36,6 +36,38 @@ struct CountryDetailView: View {
             }
 
             Section {
+                if let code = country.code {
+                    NavigationLink { AllocationsView(countryCode: code) } label: {
+                        Label("Allocations", systemImage: "chart.bar")
+                    }
+                    NavigationLink { BudgetView(countryCode: code) } label: {
+                        Label("Budget", systemImage: "list.bullet.rectangle")
+                    }
+                    NavigationLink { ExpenditureView(countryCode: code) } label: {
+                        Label("Expenditure", systemImage: "banknote")
+                    }
+                    NavigationLink { ResultsView(countryCode: code) } label: {
+                        Label("Results", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    NavigationLink { EligibilityView(countryCode: code) } label: {
+                        Label("Eligibility", systemImage: "checkmark.seal")
+                    }
+                    NavigationLink { FundingRequestsView(countryCode: code) } label: {
+                        Label("Funding requests", systemImage: "tray.full")
+                    }
+                    NavigationLink { DocumentsView(countryCode: code) } label: {
+                        Label("Documents", systemImage: "doc.text")
+                    }
+                } else {
+                    Text("More datasets need a country code, which the API didn't provide for this area.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("More data")
+            }
+
+            Section {
                 Toggle("Active grants only", isOn: $activeOnly)
             }
 

@@ -4,14 +4,21 @@ extension Double {
     /// "$1.2B" style, for tiles and list rows.
     /// Built by hand because the currency format style's `.notation` needs iOS 18.
     var usdCompact: String {
-        let magnitude = abs(self)
+        (self < 0 ? "-$" : "$") + abs(self).compactDigits
+    }
+
+    /// "1.2M" style, for counts such as people treated.
+    var countCompact: String {
+        (self < 0 ? "-" : "") + abs(self).compactDigits
+    }
+
+    private var compactDigits: String {
         let (divisor, suffix): (Double, String) =
-            magnitude >= 1e9 ? (1e9, "B")
-            : magnitude >= 1e6 ? (1e6, "M")
-            : magnitude >= 1e3 ? (1e3, "K")
+            self >= 1e9 ? (1e9, "B")
+            : self >= 1e6 ? (1e6, "M")
+            : self >= 1e3 ? (1e3, "K")
             : (1, "")
-        let number = (magnitude / divisor).formatted(.number.precision(.significantDigits(1...3)))
-        return (self < 0 ? "-$" : "$") + number + suffix
+        return (self / divisor).formatted(.number.precision(.significantDigits(1...3))) + suffix
     }
 
     /// "$1,234,567", for detail rows.

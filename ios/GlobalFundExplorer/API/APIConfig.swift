@@ -26,6 +26,10 @@ enum APIConfig {
         /// One row per financial value; disbursements are the rows whose
         /// `indicatorName` is `disbursementIndicator`.
         static let financialIndicators = "allFinancialIndicators"
+        static let programmaticIndicators = "allProgrammaticIndicators"
+        static let eligibility = "Eligibility"
+        static let fundingRequests = "FundingRequests"
+        static let documents = "Documents"
     }
 
     /// Only the grant columns the app shows, with the related records expanded.

@@ -22,6 +22,12 @@ struct RootView: View {
             NavigationStack { GrantSearchView() }
                 .tabItem { Label("Grants", systemImage: "doc.text.magnifyingglass") }
 
+            NavigationStack { DonorsView() }
+                .tabItem { Label("Donors", systemImage: "building.columns") }
+
+            NavigationStack { ResultsView() }
+                .tabItem { Label("Results", systemImage: "chart.line.uptrend.xyaxis") }
+
             NavigationStack { SettingsView() }
                 .tabItem { Label("About", systemImage: "info.circle") }
         }

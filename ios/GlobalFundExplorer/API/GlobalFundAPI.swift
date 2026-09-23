@@ -49,7 +49,7 @@ struct GlobalFundAPI: Sendable {
     func disbursements(forGrantNumber number: String) async throws -> [Disbursement] {
         let escaped = number.replacingOccurrences(of: "'", with: "''")
         let filter = "indicatorName eq '\(APIConfig.disbursementIndicator)'"
-            + " and \(APIConfig.disbursementGrantCodePath) eq '\(escaped)'"
+            + " AND \(APIConfig.disbursementGrantCodePath) eq '\(escaped)'"
         let rows = try await fetchAll(
             entitySet: APIConfig.EntitySet.financialIndicators,
             query: [
@@ -65,14 +65,18 @@ struct GlobalFundAPI: Sendable {
 
     // MARK: Generic OData paging
 
-    func fetchAll(entitySet: String, query: [URLQueryItem] = []) async throws -> [Record] {
+    /// Fetches every row of an entity set. `paged: false` sends the query as-is
+    /// (used for `$apply` aggregations, which return few rows) and only follows
+    /// `@odata.nextLink`.
+    func fetchAll(entitySet: String, query: [URLQueryItem] = [], paged: Bool = true) async throws -> [Record] {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent(entitySet),
             resolvingAgainstBaseURL: false
         ) else {
             throw APIError.badURL(baseURL.absoluteString + entitySet)
         }
-        components.queryItems = query + [URLQueryItem(name: "$top", value: String(APIConfig.pageSize))]
+        let firstItems = paged ? query + [URLQueryItem(name: "$top", value: String(APIConfig.pageSize))] : query
+        components.queryItems = firstItems.isEmpty ? nil : firstItems
         guard let firstURL = components.url else {
             throw APIError.badURL(components.description)
         }
@@ -92,7 +96,7 @@ struct GlobalFundAPI: Sendable {
             if let link = page.nextLink {
                 // nextLink may be absolute or relative to the base URL.
                 next = URL(string: link, relativeTo: baseURL)?.absoluteURL
-            } else if page.value.count == APIConfig.pageSize {
+            } else if paged && page.value.count == APIConfig.pageSize {
                 // Server honoured $top but didn't return a nextLink: page with $skip.
                 skip += APIConfig.pageSize
                 var more = components

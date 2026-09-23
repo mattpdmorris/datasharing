@@ -10,12 +10,15 @@ A SwiftUI app for browsing Global Fund grant data from the public
 | **Countries** | Portfolio totals, searchable country and area list, pinned countries (swipe a row to pin it), pull to refresh |
 | Country detail | Signed, disbursed, grant and active-grant totals, a chart of signed vs disbursed by component, grants grouped by disease with an "active only" filter |
 | Grant detail | Principal recipient, status, cycle, programme dates, signed, committed and disbursed amounts, disbursement chart (each payment plus the running total), payment list |
+| Country "More data" | Allocations by cycle, budget by cost category, expenditure by module, annual results, eligibility, funding requests, and documents (opened in Safari) |
 | **Grants** | Search every grant by number, country, recipient or component, filtered by component and active status |
+| **Donors** | Pledges vs contributions per replenishment period, and every donor's pledged and paid amounts, filterable by period |
+| **Results** | Annual results across all countries by year and component, with a trend chart for each indicator |
 | **About** | Data source and disclaimer, refresh and clear-cache controls, an editable API base URL |
 
 Grant data is cached on the device and refreshed at most once a day. Pull to
-refresh or tap **Refresh now** to force it. Disbursements are fetched per grant
-when you open it.
+refresh or tap **Refresh now** to force it. Disbursements and the other datasets
+are fetched when you open their screen.
 
 ## Build and run
 
@@ -27,6 +30,9 @@ cd ios
 xcodegen generate
 open GlobalFundExplorer.xcodeproj
 ```
+
+Run `xcodegen generate` again whenever files are added or removed, so the Xcode
+project picks them up.
 
 In Xcode, select the `GlobalFundExplorer` target, set your team under
 **Signing & Capabilities**, change the bundle ID from `org.example.GlobalFundExplorer`,
@@ -48,6 +54,12 @@ Older versions such as v3.3 are retired and return HTTP 403.
   `principalRecipient` expanded.
 - Disbursements come from `allFinancialIndicators`, filtered to
   `indicatorName eq 'Disbursement Amount - Reference Rate'` and the grant's code.
+- Allocations, budgets, expenditure, and pledges and contributions also come from
+  `allFinancialIndicators`, told apart by `financialDataSet` and `indicatorName`.
+  Results come from `allProgrammaticIndicators`, and eligibility, funding
+  requests and documents from `Eligibility`, `FundingRequests` and `Documents`.
+  These queries are in `GlobalFundAPI+Datasets.swift` and use OData `$apply`
+  so the server does the totalling.
 
 Every name is in `GlobalFundExplorer/API/APIConfig.swift`. Each value has a list
 of candidate JSON keys; the first match wins, case-insensitively, and a dotted

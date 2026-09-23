@@ -85,6 +85,20 @@ struct Record: Sendable {
         guard let raw = string(keys) else { return nil }
         return ODataDate.parse(raw)
     }
+
+    func int(_ keys: [String]) -> Int? {
+        double(keys).map { Int($0) }
+    }
+
+    /// Rows of an expanded collection, e.g. a funding request's `implementationPeriods`.
+    func records(_ keys: [String]) -> [Record] {
+        guard case .array(let items) = first(keys) else { return [] }
+        var result: [Record] = []
+        for item in items {
+            if case .object(let object) = item { result.append(Record(object)) }
+        }
+        return result
+    }
 }
 
 enum ODataDate {

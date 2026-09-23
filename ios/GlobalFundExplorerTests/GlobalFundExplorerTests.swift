@@ -139,7 +139,7 @@ final class GlobalFundAPITests: XCTestCase {
         XCTAssertEqual(entitySet, "allFinancialIndicators")
         XCTAssertEqual(
             filter,
-            "indicatorName eq 'Disbursement Amount - Reference Rate' and implementationPeriod/grant/code eq 'KEN-H-O''X'"
+            "indicatorName eq 'Disbursement Amount - Reference Rate' AND implementationPeriod/grant/code eq 'KEN-H-O''X'"
         )
         XCTAssertEqual(payments.map(\.amount), [10, 20])
         XCTAssertEqual(payments.cumulative.map(\.total), [10, 30])
@@ -156,6 +156,116 @@ final class GlobalFundAPITests: XCTestCase {
         } catch {
             XCTFail("Wrong error type: \(error)")
         }
+    }
+}
+
+final class DatasetQueryTests: XCTestCase {
+    override func tearDown() {
+        MockURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    private func makeAPI() -> GlobalFundAPI {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        return GlobalFundAPI(
+            baseURL: URL(string: "https://example.test/odata/")!,
+            session: URLSession(configuration: config)
+        )
+    }
+
+    /// Captures the request and replies with `body`.
+    private func serve(_ body: String) -> () -> URLComponents? {
+        var captured: URLComponents?
+        MockURLProtocol.handler = { request in
+            captured = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            return (200, body)
+        }
+        return { captured }
+    }
+
+    private func item(_ name: String, in components: URLComponents?) -> String? {
+        components?.queryItems?.first { $0.name == name }?.value
+    }
+
+    func testAllocationsQueryAndMapping() async throws {
+        let request = serve("""
+        {"value": [
+          {"activityArea": {"name": "HIV"}, "periodCovered": "2023-2025", "value": 100},
+          {"activityArea": null, "periodCovered": "2023-2025", "value": 5}
+        ]}
+        """)
+        let rows = try await makeAPI().allocations(countryCode: "KEN")
+        let components = request()
+        XCTAssertEqual(components?.path, "/odata/allFinancialIndicators")
+        XCTAssertNil(item("$top", in: components), "aggregations must not be paged with $top")
+        let apply = try XCTUnwrap(item("$apply", in: components))
+        XCTAssertTrue(apply.contains("geography/code eq 'KEN'"))
+        XCTAssertTrue(apply.contains("CommunicatedAllocation_ReferenceRate"))
+        XCTAssertEqual(rows.map(\.component), ["HIV", "Other"])
+        XCTAssertEqual(rows.first?.disease, .hiv)
+    }
+
+    func testPledgesMergeIntoOneRowPerDonorAndPeriod() async throws {
+        _ = serve("""
+        {"value": [
+          {"donor": {"name": "Norway", "type": {"name": "Government"}}, "periodCovered": "2023-2025",
+           "indicatorName": "Pledge - Reference Rate", "plannedAmount": 300, "actualAmount": null},
+          {"donor": {"name": "Norway", "type": {"name": "Government"}}, "periodCovered": "2023-2025",
+           "indicatorName": "Contribution - Reference Rate", "plannedAmount": null, "actualAmount": 120}
+        ]}
+        """)
+        let rows = try await makeAPI().pledgesAndContributions()
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.pledged, 300)
+        XCTAssertEqual(rows.first?.contributed, 120)
+        XCTAssertEqual(rows.first?.donorType, "Government")
+
+        let totals = rows.totals(by: { $0.donor })
+        XCTAssertEqual(totals.first?.paidShare, 0.4)
+    }
+
+    func testEligibilityReadsBooleanStatus() async throws {
+        _ = serve("""
+        {"value": [
+          {"eligibilityYear": 2025, "activityArea": {"name": "Malaria"}, "isEligible": true, "incomeLevel": "Low"},
+          {"eligibilityYear": 2025, "activityArea": {"name": "HIV"}, "isEligible": false}
+        ]}
+        """)
+        let rows = try await makeAPI().eligibility(countryCode: "KEN")
+        XCTAssertEqual(rows.map(\.status), ["Eligible", "Not eligible"])
+        XCTAssertEqual(rows.map(\.isEligible), [true, false])
+        XCTAssertEqual(rows.first?.incomeLevel, "Low")
+    }
+
+    func testFundingRequestsCollectGrantCodes() async throws {
+        let request = serve("""
+        {"value": [{
+          "name": "HIV, TB", "submissionDate": "2023-05-01T00:00:00Z", "window": "Window 2",
+          "implementationPeriods": [
+            {"grant": {"code": "KEN-H-TNT"}}, {"grant": {"code": "KEN-T-TNT"}}, {"grant": {"code": "KEN-H-TNT"}}
+          ]
+        }]}
+        """)
+        let rows = try await makeAPI().fundingRequests(countryCode: "KEN")
+        XCTAssertEqual(item("$filter", in: request()), "geography/code eq 'KEN'")
+        XCTAssertEqual(rows.first?.grantCodes, ["KEN-H-TNT", "KEN-T-TNT"])
+        XCTAssertNotNil(rows.first?.submissionDate)
+    }
+
+    func testResultsWithoutCountryAreGlobal() async throws {
+        let request = serve(#"{"value": [{"indicatorName": "People on ART", "activityArea": {"name": "HIV"}, "resultValueYear": 2024, "value": 25000000}]}"#)
+        let rows = try await makeAPI().results(countryCode: nil)
+        XCTAssertFalse(try XCTUnwrap(item("$apply", in: request())).contains("geography"))
+        XCTAssertEqual(rows.first?.year, 2024)
+        XCTAssertEqual(rows.first?.value, 25_000_000)
+    }
+
+    func testCompactFormatting() {
+        XCTAssertEqual(1_234_000_000.0.usdCompact, "$1.23B")
+        XCTAssertEqual(450_000_000.0.usdCompact, "$450M")
+        XCTAssertEqual(25_000_000.0.countCompact, "25M")
+        XCTAssertEqual((-12_000.0).usdCompact, "-$12K")
     }
 }
 

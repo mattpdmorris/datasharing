@@ -26,18 +26,28 @@ enum FiscalMeasure: String, CaseIterable, Identifiable {
 }
 
 /// How a kina figure is presented. Only `nominal` is the printed figure; the
-/// other two are clearly-labelled transformations, and years without a
-/// denominator drop out rather than being filled.
+/// others are clearly labelled transformations using ANU denominators, and a
+/// year without the denominator drops out rather than being estimated.
 enum Lens: String, CaseIterable, Identifiable {
-    case nominal, real, gdp
+    case nominal, real, gdp, share
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .nominal: "Kina"
-        case .real: "Real 2025 K"
-        case .gdp: "% of GDP"
+        case .real: "2025 prices"
+        case .gdp: "% GDP"
+        case .share: "% spending"
+        }
+    }
+
+    var longTitle: String {
+        switch self {
+        case .nominal: "Kina, as printed"
+        case .real: "Constant 2025 prices"
+        case .gdp: "Per cent of GDP"
+        case .share: "Per cent of total spending"
         }
     }
 
@@ -46,18 +56,27 @@ enum Lens: String, CaseIterable, Identifiable {
         case .nominal: "K million, nominal"
         case .real: "K million, constant 2025 prices"
         case .gdp: "Per cent of GDP"
+        case .share: "Per cent of total government spending"
         }
     }
 
-    func apply(_ value: Double, _ d: Denominator?) -> Double? {
+    var isPercent: Bool { self == .gdp || self == .share }
+
+    /// Transform a K-million figure for `year` using ANU denominators.
+    func apply(_ value: Double, _ d: ANUData.Year?, deflator: Deflator) -> Double? {
         switch self {
-        case .nominal: return value
+        case .nominal:
+            return value
         case .real:
-            guard let cpi = d?.cpi2025, cpi > 0 else { return nil }
-            return value / (cpi / 100)
+            let index = deflator == .cpi ? d?.cpi : d?.deflator
+            guard let index, index > 0 else { return nil }
+            return value / (index / 100)
         case .gdp:
-            guard let gdp = d?.gdpPrimary, gdp > 0 else { return nil }
+            guard let gdp = d?.gdp, gdp > 0 else { return nil }
             return value / gdp * 100
+        case .share:
+            guard let total = d?.totalExp, total > 0 else { return nil }
+            return value / total * 100
         }
     }
 }

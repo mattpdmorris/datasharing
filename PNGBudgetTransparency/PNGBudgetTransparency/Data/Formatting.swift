@@ -29,10 +29,17 @@ enum Fmt {
 
     static func lens(_ v: Double?, _ lens: Lens) -> String {
         guard let v else { return "—" }
+        let pct = (v < 0 ? "−" : "") + String(format: abs(v) < 1 ? "%.2f" : (abs(v) < 10 ? "%.1f" : "%.0f"), abs(v)) + "%"
         switch lens {
-        case .gdp: return (v < 0 ? "−" : "") + String(format: "%.1f", abs(v)) + "% of GDP"
+        case .gdp: return pct + " of GDP"
+        case .share: return pct + " of spending"
         case .nominal, .real: return kinaShort(v)
         }
+    }
+
+    /// Axis tick label for a lens value.
+    static func axis(_ v: Double, _ lens: Lens) -> String {
+        lens.isPercent ? String(format: "%.0f%%", v) : kinaShort(v)
     }
 
     static func percent(_ v: Double?, digits: Int = 0) -> String {

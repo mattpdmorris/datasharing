@@ -36,8 +36,9 @@ struct AgenciesView: View {
                         ForEach(store.editions.reversed(), id: \.self) { Text(String($0)).tag($0) }
                     }
                     SectorChart(totals: store.sectorTotals(edition: currentEdition, includeDebtCharges: includeDebt),
-                                selected: $sector)
+                                year: currentEdition, selected: $sector)
                         .frame(height: 200)
+                    LensPicker()
                     Toggle("Include Public Debt Charges", isOn: $includeDebt)
                         .font(.subheadline)
                     Explainer(text: "Appropriations printed for each agency in the \(String(currentEdition)) Budget, Volume 2A, grouped by Treasury's own sector classification. Tap a sector to filter. Public Debt Charges (agency 299) are left out by default: they print gross debt service, including Treasury bill redemptions, which is not spending. Volume 2A covers national departments and statutory bodies — not the whole appropriation.")
@@ -80,6 +81,7 @@ struct AgenciesView: View {
 }
 
 struct AgencyRow: View {
+    @Environment(DataStore.self) private var store
     let agency: Agency
     let edition: Int
 
@@ -95,22 +97,28 @@ struct AgencyRow: View {
                 }
             }
             Spacer()
-            Text(Fmt.kinaShort(agency.appropriation(for: edition)?.value))
+            Text(store.formatted(agency.appropriation(for: edition)?.value, year: edition))
                 .font(.subheadline.monospacedDigit())
         }
     }
 }
 
 struct SectorChart: View {
+    @Environment(DataStore.self) private var store
     let totals: [SectorTotal]
+    let year: Int
     @Binding var selected: String?
 
+    private var shown: [SectorTotal] {
+        totals.compactMap { t in store.transform(t.value, year: year).map { SectorTotal(sector: t.sector, value: $0) } }
+    }
+
     var body: some View {
-        Chart(totals) { t in
-            BarMark(x: .value("K million", t.value), y: .value("Sector", t.sector))
+        Chart(shown) { t in
+            BarMark(x: .value(store.lens.axisLabel, t.value), y: .value("Sector", t.sector))
                 .foregroundStyle(selected == nil || selected == t.sector ? Brand.gold : Color.secondary.opacity(0.3))
                 .annotation(position: .trailing) {
-                    Text(Fmt.kinaShort(t.value)).font(.caption2).foregroundStyle(.secondary)
+                    Text(Fmt.lens(t.value, store.lens)).font(.caption2).foregroundStyle(.secondary)
                 }
         }
         .chartXAxis(.hidden)
@@ -144,11 +152,14 @@ struct AgencyDetailView: View {
     private var points: [Point] {
         agency.years.flatMap { y -> [Point] in
             var p: [Point] = []
-            if let a = agency.appropriation(for: y) { p.append(Point(year: y, kind: "Appropriation", value: a.value)) }
-            if let a = agency.actual(for: y) { p.append(Point(year: y, kind: "Actual", value: a.value)) }
+            func add(_ kind: String, _ v: Double) {
+                if let t = store.transform(v, year: y) { p.append(Point(year: y, kind: kind, value: t)) }
+            }
+            if let a = agency.appropriation(for: y) { add("Appropriation", a.value) }
+            if let a = agency.actual(for: y) { add("Actual", a.value) }
             if agency.appropriation(for: y) == nil, agency.actual(for: y) == nil,
                let pr = agency.facts.filter({ $0.series == .projection && $0.refYear == y }).max(by: { $0.edition < $1.edition }) {
-                p.append(Point(year: y, kind: "Projection", value: pr.value))
+                add("Projection", pr.value)
             }
             return p
         }
@@ -163,15 +174,22 @@ struct AgencyDetailView: View {
                     Explainer(text: "This agency prints gross debt service, including Treasury bill redemptions that are rolled over within the year. Counted as spending it would make the agency budget larger than the whole appropriation, so it is excluded from sector totals by default.")
                 }
                 Chart(points) { p in
-                    BarMark(x: .value("Year", String(p.year)), y: .value("K million", p.value))
+                    BarMark(x: .value("Year", String(p.year)), y: .value(store.lens.axisLabel, p.value))
                         .position(by: .value("Series", p.kind))
                         .foregroundStyle(by: .value("Series", p.kind))
                 }
                 .chartForegroundStyleScale(["Appropriation": Brand.budget, "Actual": Brand.outturn,
                                             "Projection": Color.secondary.opacity(0.5)])
+                .chartYAxis {
+                    AxisMarks { v in
+                        AxisGridLine()
+                        AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.axis(d, store.lens)) } }
+                    }
+                }
                 .chartLegend(position: .bottom)
                 .frame(height: 220)
                 .padding(.vertical, 4)
+                LensPicker()
             } header: {
                 Text("Appropriation against outturn").textCase(nil)
             }
@@ -204,7 +222,8 @@ private struct YearFactsRow: View {
                     HStack {
                         Text("\(String(f.edition)) edition · \(f.series.title)")
                         Spacer()
-                        Text(Fmt.kinaMillions(f.value)).monospacedDigit()
+                        Text(store.lens == .nominal ? Fmt.kinaMillions(f.value) : store.formatted(f.value, year: f.refYear))
+                            .monospacedDigit()
                     }
                     .font(.subheadline)
                     HStack(spacing: 4) {
@@ -221,10 +240,10 @@ private struct YearFactsRow: View {
                 Spacer()
                 VStack(alignment: .trailing) {
                     if let a = agency.appropriation(for: year) {
-                        Text("Approp. \(Fmt.kinaShort(a.value))").font(.caption.monospacedDigit())
+                        Text("Approp. \(store.formatted(a.value, year: year))").font(.caption.monospacedDigit())
                     }
                     if let a = agency.actual(for: year) {
-                        Text("Actual \(Fmt.kinaShort(a.value))").font(.caption.monospacedDigit().weight(.semibold))
+                        Text("Actual \(store.formatted(a.value, year: year))").font(.caption.monospacedDigit().weight(.semibold))
                     }
                 }
             }

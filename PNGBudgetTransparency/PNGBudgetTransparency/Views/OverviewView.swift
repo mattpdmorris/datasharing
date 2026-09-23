@@ -4,7 +4,6 @@ import Charts
 struct OverviewView: View {
     @Environment(DataStore.self) private var store
     @State private var measure: FiscalMeasure = .expenditure
-    @State private var lens: Lens = .nominal
     @State private var selectedYear: Int?
 
     var body: some View {
@@ -21,15 +20,13 @@ struct OverviewView: View {
                         ForEach(FiscalMeasure.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Picker("Show as", selection: $lens) {
-                        ForEach(Lens.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    BudgetVsOutturnChart(rows: store.rows(measure), lens: lens,
-                                         denominator: store.denominator, selectedYear: $selectedYear)
+                    BudgetVsOutturnChart(rows: store.rows(measure), lens: store.lens,
+                                         transform: { store.transform($0, year: $1) },
+                                         selectedYear: $selectedYear)
                         .frame(height: 260)
                         .padding(.vertical, 4)
-                    Explainer(text: lensNote)
+                    LensPicker(showNote: false)
+                    Explainer(text: store.lens == .nominal ? nominalNote : store.lensNote)
                 } header: {
                     Text("\(measure.longTitle): budgeted against outturn")
                 }
@@ -37,7 +34,7 @@ struct OverviewView: View {
                 Section("Year by year") {
                     ForEach(store.rows(measure).reversed()) { row in
                         NavigationLink(value: row.year) {
-                            YearRow(row: row, lens: lens, denominator: store.denominator(row.year))
+                            YearRow(row: row)
                         }
                     }
                 }
@@ -79,17 +76,17 @@ struct OverviewView: View {
                     .font(.subheadline.weight(.semibold))
                 Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                     GridRow {
-                        StatTile(title: "Spent", value: Fmt.kinaShort(exp?.outturn),
+                        StatTile(title: "Spent", value: store.formatted(exp?.outturn, year: y),
                                  detail: exp?.execution.map { "\(Fmt.percent($0)) of budget" })
-                        StatTile(title: "Raised", value: Fmt.kinaShort(rev?.outturn),
+                        StatTile(title: "Raised", value: store.formatted(rev?.outturn, year: y),
                                  detail: rev?.execution.map { "\(Fmt.percent($0)) of budget" })
                     }
                     GridRow {
-                        StatTile(title: "Balance", value: Fmt.kinaShort(bal?.outturn),
-                                 detail: bal.flatMap { $0.budget }.map { "Budgeted \(Fmt.kinaShort($0))" },
+                        StatTile(title: "Balance", value: store.formatted(bal?.outturn, year: y),
+                                 detail: bal.flatMap { $0.budget }.map { "Budgeted \(store.formatted($0, year: y))" },
                                  tint: (bal?.outturn ?? 0) < 0 ? Brand.red : .primary)
                         if let next {
-                            StatTile(title: "\(String(next.year)) budget", value: Fmt.kinaShort(next.budget),
+                            StatTile(title: "\(String(next.year)) budget", value: store.formatted(next.budget, year: next.year),
                                      detail: "Expenditure appropriated")
                         }
                     }
@@ -99,23 +96,14 @@ struct OverviewView: View {
         .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
     }
 
-    private var lensNote: String {
-        switch lens {
-        case .nominal:
-            return "As printed in the source documents. Outturn is the Final Budget Outcome figure; where Treasury has not published one, the \"Actual\" column of a later Budget Volume 1 is used and marked."
-        case .real:
-            let cpi = store.payload?.cpiSource
-            return "Deflated by \(cpi?.measure ?? "headline CPI") (\(cpi?.name ?? "Bank of PNG")), rebased to \(cpi?.base ?? "2025 = 100"). Years before 2013 are chain-linked across the 2012 CPI basket change. A transformation, not a printed figure."
-        case .gdp:
-            return "Divided by nominal GDP from official sources only. Years with no primary GDP, or where Treasury's own GDP figures conflict, drop out rather than being filled."
-        }
+    private var nominalNote: String {
+        "As printed in the source documents. Outturn is the Final Budget Outcome figure; where Treasury has not published one, the \"Actual\" column of a later Budget Volume 1 is used and marked."
     }
 }
 
 struct YearRow: View {
+    @Environment(DataStore.self) private var store
     let row: FiscalRow
-    let lens: Lens
-    let denominator: Denominator?
 
     var body: some View {
         HStack {
@@ -133,27 +121,26 @@ struct YearRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(value(row.budget))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Text(value(row.outturn))
+                HStack(spacing: 2) {
+                    Text(store.formatted(row.budget, year: row.year))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    if store.denominatorIsProvisional(row.year) { ProvisionalMark() }
+                }
+                Text(store.formatted(row.outturn, year: row.year))
                     .font(.subheadline.monospacedDigit().weight(.semibold))
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(String(row.year)): budget \(value(row.budget)), outturn \(value(row.outturn))")
-    }
-
-    private func value(_ v: Double?) -> String {
-        guard let v else { return "—" }
-        return Fmt.lens(lens.apply(v, denominator), lens)
+        .accessibilityLabel("\(String(row.year)): budget \(store.formatted(row.budget, year: row.year)), outturn \(store.formatted(row.outturn, year: row.year))")
     }
 }
 
 struct BudgetVsOutturnChart: View {
     let rows: [FiscalRow]
     let lens: Lens
-    let denominator: (Int) -> Denominator?
+    /// Converts a K-million figure for a year into the current lens.
+    let transform: (Double, Int) -> Double?
     @Binding var selectedYear: Int?
 
     private struct Point: Identifiable {
@@ -171,11 +158,10 @@ struct BudgetVsOutturnChart: View {
         var segment = 0
         var lastOutturnYear: Int?
         for r in rows {
-            let d = denominator(r.year)
-            if let b = r.budget, let v = lens.apply(b, d) {
+            if let b = r.budget, let v = transform(b, r.year) {
                 out.append(Point(year: r.year, kind: "Budget", value: v))
             }
-            if let o = r.outturn, let v = lens.apply(o, d) {
+            if let o = r.outturn, let v = transform(o, r.year) {
                 if let last = lastOutturnYear, r.year != last + 1 { segment += 1 }
                 out.append(Point(year: r.year, kind: "Outturn", value: v, segment: segment))
                 lastOutturnYear = r.year
@@ -201,7 +187,7 @@ struct BudgetVsOutturnChart: View {
                     .foregroundStyle(by: .value("Series", p.kind))
                     .symbolSize(selectedYear == p.year ? 70 : 28)
             }
-            if lens != .gdp || pts.contains(where: { $0.value < 0 }) {
+            if pts.contains(where: { $0.value < 0 }) {
                 RuleMark(y: .value("Zero", 0)).foregroundStyle(Color.secondary.opacity(0.5))
             }
             if let y = selectedYear {
@@ -224,7 +210,7 @@ struct BudgetVsOutturnChart: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let d = v.as(Double.self) {
-                        Text(lens == .gdp ? String(format: "%.0f%%", d) : Fmt.kinaShort(d))
+                        Text(Fmt.axis(d, lens))
                     }
                 }
             }

@@ -27,6 +27,12 @@ final class DataStore {
     private(set) var editions: [Int] = []
     private(set) var projects: [PIPProject] = []
     private(set) var pipVolumes: [String] = []
+    private(set) var anu: ANUData?
+
+    /// How every figure in the app is shown. Shared by all tabs so a reader
+    /// who switches to "% of GDP" sees it everywhere.
+    var lens: Lens = .nominal
+    var deflator: Deflator = .cpi
 
     init() {}
 
@@ -44,6 +50,7 @@ final class DataStore {
                 try DataStore.decodeBundled()
             }.value
             apply(p, origin: "Bundled with the app")
+            anu = try? await Task.detached(priority: .userInitiated, operation: { try DataStore.loadBundledANU() }).value
             if let pip = try? await Task.detached(priority: .utility, operation: { try DataStore.loadBundledProjects() }).value {
                 projects = pip.projects
                 pipVolumes = pip.volumes
@@ -141,7 +148,56 @@ final class DataStore {
             .filter { a in a.facts.contains { $0.edition == edition } }
     }
 
+    // MARK: Lenses (ANU denominators)
+
+    func anuYear(_ year: Int) -> ANUData.Year? { anu?.year(year) }
+
+    /// A K-million figure for `year` in the current lens; nil when the ANU
+    /// denominator for that year is missing.
+    func transform(_ value: Double?, year: Int) -> Double? {
+        guard let value else { return nil }
+        return lens.apply(value, anuYear(year), deflator: deflator)
+    }
+
+    func formatted(_ value: Double?, year: Int) -> String {
+        guard value != nil else { return "—" }
+        return Fmt.lens(transform(value, year: year), lens)
+    }
+
+    /// True when the denominator used for `year` is an ANU estimate or projection.
+    func denominatorIsProvisional(_ year: Int) -> Bool {
+        guard let d = anuYear(year) else { return false }
+        switch lens {
+        case .nominal: return false
+        case .real: return deflator == .cpi ? d.cpiStatus != "a" : (d.gdpStatus ?? "a") != "a"
+        case .gdp: return (d.gdpStatus ?? "a") != "a"
+        case .share: return (d.expStatus ?? "a") != "a"
+        }
+    }
+
+    var lensNote: String {
+        let src = anu.map { "ANU Development Policy Centre / UPNG PNG National Budget Database (\($0.source.edition))" }
+            ?? "ANU PNG National Budget Database"
+        switch lens {
+        case .nominal:
+            return "As printed in the source documents."
+        case .real:
+            return deflator == .cpi
+                ? "Constant 2025 prices: deflated by consumer prices, chained from annual-average CPI inflation in the \(src), 2025 = 100. 2024 is an estimate and 2025 onward are Treasury projections. A transformation, not a printed figure."
+                : "Constant 2025 prices: deflated by the GDP deflator from the \(src), 2025 = 100. PNG's GDP deflator moves with LNG and mineral prices, so it can differ sharply from consumer prices. A transformation, not a printed figure."
+        case .gdp:
+            return "Divided by nominal GDP from the \(src) (new NSO series; 2005–06 from the ANU PNG Economic Database so old and new GDP series are never mixed). 2024 is an estimate and 2025 onward are projections."
+        case .share:
+            return "Divided by total general government expenditure and net lending for the same year, from the \(src): actual outturn to 2024, 2025 estimate, 2026 onward projections. For the Expenditure measure, 100% is what was actually spent."
+        }
+    }
+
     // MARK: Optional PIP projects
+
+    nonisolated private static func loadBundledANU() throws -> ANUData? {
+        guard let url = Bundle.main.url(forResource: "anu_denominators", withExtension: "json") else { return nil }
+        return try JSONDecoder().decode(ANUData.self, from: Data(contentsOf: url))
+    }
 
     nonisolated private static func loadBundledProjects() throws -> PIPData? {
         guard let url = Bundle.main.url(forResource: "pip_projects", withExtension: "json") else { return nil }

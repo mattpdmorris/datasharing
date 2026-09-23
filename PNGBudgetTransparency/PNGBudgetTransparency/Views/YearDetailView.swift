@@ -14,29 +14,56 @@ struct YearDetailView: View {
                     MeasureYearSection(measure: m, row: row)
                 }
             }
-            if let d = store.denominator(year) {
-                Section("Context") {
-                    if let gdp = d.gdpPrimary {
-                        LabeledContent("Nominal GDP", value: Fmt.kinaMillions(gdp))
-                        if let src = d.gdpPrimarySrc {
-                            Text(src).font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text("No primary GDP figure is held for \(String(year)), so % of GDP is not shown.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if let cpi = d.cpi2025 {
-                        LabeledContent("CPI (2025 = 100)", value: String(format: "%.1f", cpi))
-                        if d.isChainLinked {
-                            FlagBadge(text: "Chain-linked across 2012 basket change", style: .info)
+            Section {
+                LensPicker()
+                if store.lens != .nominal {
+                    ForEach(FiscalMeasure.allCases) { m in
+                        if let row = store.row(m, year: year) {
+                            LabeledContent(m.longTitle) {
+                                VStack(alignment: .trailing) {
+                                    Text("Budget \(store.formatted(row.budget, year: year))")
+                                    Text("Outturn \(store.formatted(row.outturn, year: year))")
+                                }
+                                .font(.caption.monospacedDigit())
+                            }
                         }
                     }
+                }
+            } header: {
+                Text("Show as").textCase(nil)
+            }
+
+            if let d = store.anuYear(year) {
+                Section {
+                    if let gdp = d.gdp {
+                        LabeledContent("Nominal GDP", value: Fmt.kinaMillions(gdp) + status(d.gdpStatus))
+                    }
+                    if let t = d.totalExp {
+                        LabeledContent("Total government spending", value: Fmt.kinaMillions(t) + status(d.expStatus))
+                    }
+                    if let cpi = d.cpi {
+                        LabeledContent("CPI (2025 = 100)", value: String(format: "%.1f", cpi) + status(d.cpiStatus))
+                    }
+                    if let defl = d.deflator {
+                        LabeledContent("GDP deflator (2025 = 100)", value: String(format: "%.1f", defl))
+                    }
+                    if d.gdpSrc == "e" {
+                        Explainer(text: "GDP for \(String(year)) is from the ANU PNG Economic Database (new NSO series); the budget database carries only the old series before 2007.")
+                    }
+                } header: {
+                    Text("ANU denominators for \(String(year))").textCase(nil)
+                } footer: {
+                    Text(store.anu.map { "\($0.source.name), \($0.source.edition) — \($0.source.publisher)." } ?? "")
                 }
             }
         }
         .navigationTitle(String(year))
         .navigationBarTitleDisplayMode(.large)
     }
+}
+
+private func status(_ s: String?) -> String {
+    ANUData.statusLabel(s).map { " (\($0))" } ?? ""
 }
 
 private struct MeasureYearSection: View {

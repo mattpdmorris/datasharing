@@ -43,6 +43,7 @@ struct ProjectsView: View {
                         Text("All programmes").tag(String?.none)
                         ForEach(groups, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
+                    LensPicker()
                 }
 
                 Section("\(filtered.count) projects") {
@@ -66,6 +67,7 @@ struct ProjectsView: View {
 }
 
 private struct ProjectRow: View {
+    @Environment(DataStore.self) private var store
     let project: PIPProject
 
     var body: some View {
@@ -79,7 +81,7 @@ private struct ProjectRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(Fmt.kinaShort(project.currentYearAllocation))
+                Text(project.latestEdition.map { store.formatted(project.currentYearAllocation, year: $0) } ?? "—")
                     .font(.subheadline.monospacedDigit())
                 if let e = project.latestEdition {
                     Text(String(e)).font(.caption2).foregroundStyle(.secondary)
@@ -105,7 +107,9 @@ struct ProjectDetailView: View {
 
     /// Every edition's profile, so re-phasing across budgets is visible.
     private var points: [Point] {
-        project.facts.filter { !$0.isPrintedTotal }.map { Point(edition: $0.edition, year: $0.refYear, value: $0.value) }
+        project.facts.filter { !$0.isPrintedTotal }.compactMap { f in
+            store.transform(f.value, year: f.refYear).map { Point(edition: f.edition, year: f.refYear, value: $0) }
+        }
     }
 
     var body: some View {
@@ -124,11 +128,11 @@ struct ProjectDetailView: View {
 
             Section {
                 Chart(points) { p in
-                    LineMark(x: .value("Year", p.year), y: .value("K million", p.value),
+                    LineMark(x: .value("Year", p.year), y: .value(store.lens.axisLabel, p.value),
                              series: .value("Edition", String(p.edition)))
                         .foregroundStyle(p.edition == currentEdition ? Brand.red : Color.secondary.opacity(0.35))
                         .lineStyle(StrokeStyle(lineWidth: p.edition == currentEdition ? 2.5 : 1))
-                    PointMark(x: .value("Year", p.year), y: .value("K million", p.value))
+                    PointMark(x: .value("Year", p.year), y: .value(store.lens.axisLabel, p.value))
                         .foregroundStyle(p.edition == currentEdition ? Brand.red : Color.secondary.opacity(0.35))
                         .symbolSize(p.edition == currentEdition ? 30 : 10)
                 }
@@ -138,7 +142,14 @@ struct ProjectDetailView: View {
                         AxisValueLabel { if let y = v.as(Int.self) { Text(String(y)) } }
                     }
                 }
+                .chartYAxis {
+                    AxisMarks { v in
+                        AxisGridLine()
+                        AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.axis(d, store.lens)) } }
+                    }
+                }
                 .frame(height: 200)
+                LensPicker(showNote: false)
                 Explainer(text: "Each line is one budget edition's five-year profile for this project. The highlighted line is the selected edition; grey lines show how earlier budgets planned it.")
             } header: {
                 Text("How the plan moved across budgets").textCase(nil)
@@ -169,7 +180,9 @@ struct ProjectDetailView: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text(Fmt.kinaMillions(f.value)).monospacedDigit()
+                Text(store.lens == .nominal || f.isPrintedTotal ? Fmt.kinaMillions(f.value)
+                                                                : store.formatted(f.value, year: f.refYear))
+                    .monospacedDigit()
             }
             .font(.subheadline)
             HStack(spacing: 4) {

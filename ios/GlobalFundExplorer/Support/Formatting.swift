@@ -2,8 +2,16 @@ import SwiftUI
 
 extension Double {
     /// "$1.2B" style, for tiles and list rows.
+    /// Built by hand because the currency format style's `.notation` needs iOS 18.
     var usdCompact: String {
-        formatted(.currency(code: "USD").notation(.compactName).precision(.significantDigits(1...3)))
+        let magnitude = abs(self)
+        let (divisor, suffix): (Double, String) =
+            magnitude >= 1e9 ? (1e9, "B")
+            : magnitude >= 1e6 ? (1e6, "M")
+            : magnitude >= 1e3 ? (1e3, "K")
+            : (1, "")
+        let number = (magnitude / divisor).formatted(.number.precision(.significantDigits(1...3)))
+        return (self < 0 ? "-$" : "$") + number + suffix
     }
 
     /// "$1,234,567", for detail rows.

@@ -8,7 +8,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text("Global Fund Explorer shows grant agreements and disbursements published by the Global Fund to Fight AIDS, Tuberculosis and Malaria.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Global Fund Explorer").font(.headline)
+                    PoweredByTagline()
+                }
+                Text("Global Fund Explorer shows grants, disbursements, allocations, budgets, expenditure, results, eligibility, funding requests, documents and donor pledges published by the Global Fund to Fight AIDS, Tuberculosis and Malaria.")
                 Link("The Global Fund Data Service", destination: URL(string: "https://data-service.theglobalfund.org")!)
             } header: {
                 Text("About")

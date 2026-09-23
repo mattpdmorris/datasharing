@@ -55,6 +55,8 @@ struct CountryListView: View {
                         countries: store.countries.count,
                         grants: store.grants.count
                     )
+                } header: {
+                    PoweredByTagline()
                 }
             }
 

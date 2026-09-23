@@ -41,9 +41,22 @@ struct Record: Sendable {
 
     private func first(_ keys: [String]) -> JSONValue? {
         for key in keys {
-            if let value = fields[key.lowercased()], value != .null { return value }
+            if let value = lookup(key), value != .null { return value }
         }
         return nil
+    }
+
+    /// Resolves `name` or a dotted path such as `geography.name` into expanded records.
+    private func lookup(_ path: String) -> JSONValue? {
+        let parts = path.lowercased().split(separator: ".").map(String.init)
+        guard let head = parts.first, var current = fields[head] else { return nil }
+        for part in parts.dropFirst() {
+            guard case .object(let object) = current,
+                  let next = object.first(where: { $0.key.lowercased() == part })?.value
+            else { return nil }
+            current = next
+        }
+        return current
     }
 
     func string(_ keys: [String]) -> String? {

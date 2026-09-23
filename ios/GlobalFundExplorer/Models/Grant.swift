@@ -24,7 +24,7 @@ struct Grant: Identifiable, Codable, Hashable, Sendable {
 
     var isActive: Bool {
         if let status = status?.lowercased() {
-            if ["inactive", "closed", "terminated", "suspended"].contains(where: { status.contains($0) }) { return false }
+            if ["inactive", "clos", "terminated", "suspended", "transitioned"].contains(where: { status.contains($0) }) { return false }
             if status.contains("active") || status.contains("in progress") { return true }
         }
         if let endDate { return endDate >= Date() }

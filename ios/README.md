@@ -37,27 +37,27 @@ delete its generated `ContentView.swift` and `<Name>App.swift`, and drag the
 `GlobalFundExplorer/` folder into the project. Do the same with
 `GlobalFundExplorerTests/` into a Unit Testing Bundle target.
 
-## Check the API names first
+## API version and names
 
-This code was written without live access to the API, so **the entity set and
-field names are best-effort and not yet verified.** All of them are in one
-file:
+The app uses **version 4.2** of the Data Service API
+(`https://fetch.theglobalfund.org/v4.2/odata/`), the same one the Global Fund's
+own [Data Explorer](https://github.com/globalfund/data-explorer-server) uses.
+Older versions such as v3.3 are retired and return HTTP 403.
 
-- `GlobalFundExplorer/API/APIConfig.swift`: base URL and version, entity sets
-  (`VGrantAgreements`, `VGrantAgreementDisbursements`), the field used to filter
-  disbursements, and a list of candidate JSON keys for each value.
+- Grants come from `Grants`, with `status`, `geography`, `activityArea` and
+  `principalRecipient` expanded.
+- Disbursements come from `allFinancialIndicators`, filtered to
+  `indicatorName eq 'Disbursement Amount - Reference Rate'` and the grant's code.
 
-To check them:
+Every name is in `GlobalFundExplorer/API/APIConfig.swift`. Each value has a list
+of candidate JSON keys; the first match wins, case-insensitively, and a dotted
+key such as `geography.name` reads from an expanded record.
 
-1. Open the API documentation or explorer on the Data Service portal and note
-   the current version (for example `v3.3` or `v4`) and entity set names.
-2. Fetch a sample row in a browser, for example
-   `https://fetch.theglobalfund.org/v3.3/odata/VGrantAgreements?$top=1`.
-3. Compare its keys with `APIConfig.Fields`. The first matching candidate wins,
-   case-insensitively, so you can add the real key to the front of each list.
-
-If a screen shows **HTTP 404**, the version or entity set name has changed. You
-can change the base URL in the app's **About** tab without rebuilding.
+If the Global Fund releases a new version, try it with a URL such as
+`https://fetch.theglobalfund.org/v4.2/odata/Grants?$top=1` in a browser, then
+update `APIConfig`. You can also change the base URL in the app's **About** tab
+without rebuilding. **HTTP 403 or 404** usually means the version or an entity
+set name has changed.
 
 ## Structure
 

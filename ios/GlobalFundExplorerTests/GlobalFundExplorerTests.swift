@@ -7,26 +7,28 @@ final class RecordMappingTests: XCTestCase {
         return Record(raw)
     }
 
-    func testGrantMapsFromODataRow() throws {
+    func testGrantMapsFromV4Row() throws {
         let row = try record("""
         {
-          "grantAgreementId": 1234,
-          "grantAgreementNumber": "KEN-H-TNT",
-          "geographicAreaName": "Kenya",
-          "componentName": "HIV/AIDS",
-          "principalRecipientName": "The National Treasury",
-          "grantAgreementStatusTypeName": "Active",
-          "programStartDate": "2024-01-01T00:00:00Z",
-          "programEndDate": "2026-12-31T00:00:00.000Z",
+          "code": "KEN-H-TNT",
+          "status": {"statusName": "Active"},
+          "geography": {"name": "Kenya", "code": "KEN"},
+          "activityArea": {"name": "HIV"},
+          "principalRecipient": {"name": "The National Treasury"},
+          "periodStartDate": "2024-01-01T00:00:00Z",
+          "periodEndDate": "2026-12-31T00:00:00.000Z",
           "totalSignedAmount_ReferenceRate": 310000000.5,
-          "totalCommittedAmount_ReferenceRate": "250000000",
+          "totalCommitmentAmount_ReferenceRate": "250000000",
           "totalDisbursedAmount_ReferenceRate": null
         }
         """)
         let grant = try XCTUnwrap(Grant(record: row))
-        XCTAssertEqual(grant.id, "1234")
+        XCTAssertEqual(grant.id, "KEN-H-TNT")
         XCTAssertEqual(grant.number, "KEN-H-TNT")
         XCTAssertEqual(grant.country, "Kenya")
+        XCTAssertEqual(grant.countryCode, "KEN")
+        XCTAssertEqual(grant.principalRecipient, "The National Treasury")
+        XCTAssertEqual(grant.status, "Active")
         XCTAssertEqual(grant.disease, .hiv)
         XCTAssertEqual(grant.signed, 310_000_000.5)
         XCTAssertEqual(grant.committed, 250_000_000)
@@ -34,6 +36,13 @@ final class RecordMappingTests: XCTestCase {
         XCTAssertNotNil(grant.startDate)
         XCTAssertNotNil(grant.endDate)
         XCTAssertTrue(grant.isActive)
+    }
+
+    func testMissingNestedRecordFallsBackToDefault() throws {
+        let row = try record(#"{"code": "X-3", "geography": null, "activityArea": {"Name": "Malaria"}}"#)
+        let grant = try XCTUnwrap(Grant(record: row))
+        XCTAssertEqual(grant.country, "Unknown")
+        XCTAssertEqual(grant.disease, .malaria)
     }
 
     func testLookupIsCaseInsensitiveAndFallsBack() throws {
@@ -48,8 +57,8 @@ final class RecordMappingTests: XCTestCase {
         XCTAssertNil(Grant(record: try record(#"{"geographicAreaName": "Kenya"}"#)))
     }
 
-    func testInactiveStatusIsNotActive() throws {
-        let row = try record(#"{"grantAgreementNumber": "X-2", "grantAgreementStatusTypeName": "Inactive"}"#)
+    func testClosingStatusIsNotActive() throws {
+        let row = try record(#"{"grantAgreementNumber": "X-2", "status": {"statusName": "In Closure"}}"#)
         XCTAssertFalse(try XCTUnwrap(Grant(record: row)).isActive)
     }
 
@@ -100,32 +109,38 @@ final class GlobalFundAPITests: XCTestCase {
             let url = try XCTUnwrap(request.url)
             requested.append(url)
             let body = url.query?.contains("page=2") == true
-                ? #"{"value": [{"grantAgreementNumber": "B"}]}"#
-                : #"{"value": [{"grantAgreementNumber": "A"}], "@odata.nextLink": "https://example.test/odata/VGrantAgreements?page=2"}"#
+                ? #"{"value": [{"code": "B"}]}"#
+                : #"{"value": [{"code": "A"}], "@odata.nextLink": "https://example.test/odata/Grants?page=2"}"#
             return (200, body)
         }
 
         let grants = try await makeAPI().grants()
         XCTAssertEqual(grants.map(\.number), ["A", "B"])
         XCTAssertEqual(requested.count, 2)
-        XCTAssertEqual(requested.first?.lastPathComponent, APIConfig.EntitySet.grantAgreements)
+        XCTAssertEqual(requested.first?.lastPathComponent, APIConfig.EntitySet.grants)
     }
 
     func testDisbursementsAreFilteredAndSorted() async throws {
         var filter: String?
+        var entitySet: String?
         MockURLProtocol.handler = { request in
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
             filter = components?.queryItems?.first { $0.name == "$filter" }?.value
+            entitySet = request.url?.lastPathComponent
             return (200, """
             {"value": [
-              {"disbursementDate": "2024-06-01T00:00:00Z", "disbursementAmount_ReferenceRate": 20},
-              {"disbursementDate": "2024-01-01T00:00:00Z", "disbursementAmount_ReferenceRate": 10}
+              {"valueDate": "2024-06-01T00:00:00Z", "actualAmount": 20},
+              {"valueDate": "2024-01-01T00:00:00Z", "actualAmount": 10}
             ]}
             """)
         }
 
         let payments = try await makeAPI().disbursements(forGrantNumber: "KEN-H-O'X")
-        XCTAssertEqual(filter, "grantAgreementNumber eq 'KEN-H-O''X'")
+        XCTAssertEqual(entitySet, "allFinancialIndicators")
+        XCTAssertEqual(
+            filter,
+            "indicatorName eq 'Disbursement Amount - Reference Rate' and implementationPeriod/grant/code eq 'KEN-H-O''X'"
+        )
         XCTAssertEqual(payments.map(\.amount), [10, 20])
         XCTAssertEqual(payments.cumulative.map(\.total), [10, 30])
     }

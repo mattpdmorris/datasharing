@@ -42,16 +42,21 @@ struct GlobalFundAPI: Sendable {
     // MARK: Domain calls
 
     func grants() async throws -> [Grant] {
-        let rows = try await fetchAll(entitySet: APIConfig.EntitySet.grantAgreements)
+        let rows = try await fetchAll(entitySet: APIConfig.EntitySet.grants, query: APIConfig.grantsQuery)
         return rows.compactMap(Grant.init(record:))
     }
 
     func disbursements(forGrantNumber number: String) async throws -> [Disbursement] {
         let escaped = number.replacingOccurrences(of: "'", with: "''")
-        let filter = "\(APIConfig.disbursementGrantFilterField) eq '\(escaped)'"
+        let filter = "indicatorName eq '\(APIConfig.disbursementIndicator)'"
+            + " and \(APIConfig.disbursementGrantCodePath) eq '\(escaped)'"
         let rows = try await fetchAll(
-            entitySet: APIConfig.EntitySet.disbursements,
-            query: [URLQueryItem(name: "$filter", value: filter)]
+            entitySet: APIConfig.EntitySet.financialIndicators,
+            query: [
+                URLQueryItem(name: "$filter", value: filter),
+                URLQueryItem(name: "$select", value: APIConfig.disbursementSelect),
+                URLQueryItem(name: "$orderby", value: "valueDate asc"),
+            ]
         )
         return rows.enumerated()
             .compactMap { index, record in Disbursement(record: record, fallbackIndex: index) }

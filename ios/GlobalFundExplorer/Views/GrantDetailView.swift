@@ -44,6 +44,16 @@ struct GrantDetailView: View {
                 Text("Signed is the grant agreement amount; committed is what the Global Fund has formally set aside; disbursed is what has actually been paid.")
             }
 
+            Section {
+                NavigationLink {
+                    TargetsResultsView(grant: grant)
+                } label: {
+                    Label("Targets and results", systemImage: "target")
+                }
+            } footer: {
+                Text("The grant's indicators with baselines, targets, results and achievement, including breakdowns such as sex, age or key population where reported.")
+            }
+
             Section("Disbursements") {
                 disbursementContent
             }

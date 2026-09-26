@@ -184,6 +184,46 @@ extension GlobalFundAPI {
         return Array(merged.values)
     }
 
+    // MARK: Grant targets and results
+
+    /// A grant's implementation periods, newest first.
+    func implementationPeriods(grantCode: String) async throws -> [ImplementationPeriod] {
+        let rows = try await fetchAll(
+            entitySet: APIConfig.EntitySet.grants,
+            query: [
+                URLQueryItem(name: "$filter", value: "code eq \(quoted(grantCode))"),
+                URLQueryItem(name: "$select", value: "code"),
+                URLQueryItem(name: "$expand", value: "implementationPeriods"),
+            ]
+        )
+        let periods = rows.flatMap { $0.records(["implementationPeriods"]) }.compactMap { p -> ImplementationPeriod? in
+            guard let code = p.string(["code"]) else { return nil }
+            return ImplementationPeriod(
+                code: code,
+                title: p.string(["title"]),
+                startDate: p.date(["periodStartDate", "periodFrom"]),
+                endDate: p.date(["periodEndDate", "periodTo"])
+            )
+        }
+        return periods.sorted { ($0.startDate ?? .distantPast, $0.code) > ($1.startDate ?? .distantPast, $1.code) }
+    }
+
+    /// The performance framework of one implementation period: every indicator's
+    /// baseline, targets and results, including disaggregated rows.
+    func targetsResults(implementationPeriodCode: String) async throws -> [TargetResultRow] {
+        let filter = "programmaticDataSet eq 'IMPLEMENTATION_PERIOD_TARGETS_RESULTS'"
+            + " AND implementationPeriod/code eq \(quoted(implementationPeriodCode))"
+        let rows = try await fetchAll(
+            entitySet: APIConfig.EntitySet.programmaticIndicators,
+            query: [
+                URLQueryItem(name: "$filter", value: filter),
+                URLQueryItem(name: "$expand", value: "activityArea($select=name)"),
+                URLQueryItem(name: "$orderby", value: "indicatorName asc"),
+            ]
+        )
+        return rows.enumerated().compactMap { index, record in TargetResultRow(record: record, index: index) }
+    }
+
     // MARK: Helpers
 
     private func aggregate(_ entitySet: String, apply: String, orderby: String? = nil) async throws -> [Record] {

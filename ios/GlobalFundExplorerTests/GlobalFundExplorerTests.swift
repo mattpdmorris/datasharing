@@ -261,6 +261,55 @@ final class DatasetQueryTests: XCTestCase {
         XCTAssertEqual(rows.first?.value, 25_000_000)
     }
 
+    func testImplementationPeriodsNewestFirst() async throws {
+        let request = serve("""
+        {"value": [{"code": "KEN-H-TNT", "implementationPeriods": [
+          {"code": "KEN-H-TNTP01", "title": "GC6", "periodStartDate": "2021-01-01T00:00:00Z", "periodEndDate": "2023-12-31T00:00:00Z"},
+          {"code": "KEN-H-TNTP02", "title": "GC7", "periodStartDate": "2024-01-01T00:00:00Z", "periodEndDate": "2026-12-31T00:00:00Z"}
+        ]}]}
+        """)
+        let periods = try await makeAPI().implementationPeriods(grantCode: "KEN-H-TNT")
+        XCTAssertEqual(item("$filter", in: request()), "code eq 'KEN-H-TNT'")
+        XCTAssertEqual(periods.map(\.code), ["KEN-H-TNTP02", "KEN-H-TNTP01"])
+        XCTAssertEqual(periods.first?.label, "GC7 (2024–2026)")
+    }
+
+    func testTargetsResultsMapping() async throws {
+        let request = serve("""
+        {"value": [
+          {"indicatorName": "HIV-O-1: Viral suppression", "activityArea": {"name": "Treatment"},
+           "valueType": "Outcome indicator", "grouping_Level1": "Sex", "grouping_Level2": "Female",
+           "targetValueYear": 2025, "targetValuePercentage": 90, "resultValuePercentage": 81,
+           "performance": 0.9, "isReversed": false},
+          {"indicatorName": "Coverage: people on ART", "activityArea": {"name": "Treatment"},
+           "valueType": "Coverage / Output indicator", "startDate": "2024-07-01T00:00:00Z",
+           "targetValueNumerator": 1000, "resultValueNumerator": 800, "isReversed": false},
+          {"indicatorName": "TB incidence", "activityArea": null, "valueType": "Impact indicator",
+           "targetValueYear": 2025, "targetValueNumerator": 200, "resultValueNumerator": 250, "isReversed": true}
+        ]}
+        """)
+        let rows = try await makeAPI().targetsResults(implementationPeriodCode: "KEN-H-TNTP02")
+        let filter = try XCTUnwrap(item("$filter", in: request()))
+        XCTAssertTrue(filter.contains("IMPLEMENTATION_PERIOD_TARGETS_RESULTS"))
+        XCTAssertTrue(filter.contains("implementationPeriod/code eq 'KEN-H-TNTP02'"))
+
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows[0].breakdownLabel, "Sex: Female")
+        XCTAssertEqual(rows[0].achievement, 0.9, "reported performance wins")
+        XCTAssertEqual(rows[1].year, 2024, "coverage indicators fall back to the start date's year")
+        XCTAssertEqual(rows[1].achievement, 0.8)
+        XCTAssertEqual(rows[1].breakdownLabel, "Total")
+        XCTAssertEqual(rows[2].module, "Other")
+        XCTAssertEqual(rows[2].achievement, 0.8, "reversed: target / result")
+    }
+
+    func testIndicatorValueDisplay() {
+        XCTAssertEqual(IndicatorValue(percentage: 81, numerator: nil, denominator: nil, text: nil).display, "81%")
+        XCTAssertEqual(IndicatorValue(percentage: nil, numerator: 800, denominator: nil, text: nil).display, "800")
+        XCTAssertEqual(IndicatorValue(percentage: nil, numerator: nil, denominator: nil, text: "N/A").display, "N/A")
+        XCTAssertNil(IndicatorValue(percentage: nil, numerator: nil, denominator: nil, text: nil).display)
+    }
+
     func testCompactFormatting() {
         XCTAssertEqual(1_234_000_000.0.usdCompact, "$1.23B")
         XCTAssertEqual(450_000_000.0.usdCompact, "$450M")

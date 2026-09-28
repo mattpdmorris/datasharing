@@ -16,14 +16,21 @@ struct Treemap: View {
     let items: [TreemapItem]
     var onTap: (TreemapItem) -> Void = { _ in }
 
+    private struct Placed: Identifiable {
+        let item: TreemapItem
+        let rect: CGRect
+        var id: String { item.id }
+    }
+
     var body: some View {
         GeometryReader { geo in
             let positive = items.filter { $0.value > 0 }.sorted { $0.value > $1.value }
             let rects = Treemap.squarify(positive.map(\.value),
                                          in: CGRect(origin: .zero, size: geo.size))
+            let tiles = zip(positive, rects).map { Placed(item: $0.0, rect: $0.1) }
             ZStack(alignment: .topLeading) {
-                ForEach(Array(zip(positive, rects)), id: \.0.id) { item, rect in
-                    tile(item, rect)
+                ForEach(tiles) { t in
+                    tile(t.item, t.rect)
                 }
             }
         }

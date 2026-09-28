@@ -33,9 +33,9 @@ struct ProjectsView: View {
             .sorted { $0.name < $1.name }
     }
 
-    private var editions: [Int] {
-        Array(Set(store.projects.flatMap(\.editions))).sorted()
-    }
+    /// Cached in the store: recomputing this from 20,000 facts inside the
+    /// filter and sort froze the app.
+    private var editions: [Int] { store.pipEditions }
 
     /// 0 means "each project's latest edition".
     private var selectedYear: Int { year ?? editions.last ?? 0 }

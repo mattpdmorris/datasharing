@@ -27,6 +27,8 @@ final class DataStore {
     private(set) var editions: [Int] = []
     private(set) var projects: [PIPProject] = []
     private(set) var pipVolumes: [String] = []
+    /// Budget editions present in the PIP data, computed once at load.
+    private(set) var pipEditions: [Int] = []
     private(set) var anu: ANUData?
 
     /// How every figure in the app is shown. Shared by all tabs so a reader
@@ -54,6 +56,7 @@ final class DataStore {
             if let pip = try? await Task.detached(priority: .utility, operation: { try DataStore.loadBundledProjects() }).value {
                 projects = pip.projects
                 pipVolumes = pip.volumes
+                pipEditions = Array(Set(pip.projects.flatMap { $0.facts.map(\.edition) })).sorted()
             }
             state = .ready
         } catch {

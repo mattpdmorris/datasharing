@@ -7,6 +7,8 @@ struct ProjectsView: View {
     @State private var group: String?
     @State private var agencyCode: String?
     @State private var path = NavigationPath()
+    /// Budget edition; nil = the most recent edition, 0 = each project's latest.
+    @State private var year: Int?
     @State private var sort: Sort = .current
 
     enum Sort: String, CaseIterable, Identifiable {
@@ -31,17 +33,24 @@ struct ProjectsView: View {
             .sorted { $0.name < $1.name }
     }
 
+    private var editions: [Int] {
+        Array(Set(store.projects.flatMap(\.editions))).sorted()
+    }
+
+    /// 0 means "each project's latest edition".
+    private var selectedYear: Int { year ?? editions.last ?? 0 }
+
     private var filtered: [PIPProject] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let list = store.projects.filter { p in
             (group == nil || p.group == group) &&
             (agencyCode == nil || p.agencyCode == agencyCode) &&
+            (selectedYear == 0 || p.appears(in: selectedYear)) &&
             (q.isEmpty || p.name.lowercased().contains(q) || p.agency.lowercased().contains(q)
                 || p.pipNumber.contains(q) || p.otherNames.contains { $0.lowercased().contains(q) })
         }
         switch sort {
-        case .current: return list.sorted { ($0.currentYearAllocation ?? -1) > ($1.currentYearAllocation ?? -1) }
-        case .total: return list.sorted { ($0.latestTotal ?? -1) > ($1.latestTotal ?? -1) }
+        case .current, .total: return list.sorted { measure($0) > measure($1) }
         case .name: return list.sorted { $0.name < $1.name }
         }
     }
@@ -49,11 +58,15 @@ struct ProjectsView: View {
     /// The measure the treemap is sized by: the 5-year total when sorting by it,
     /// otherwise the latest edition's own-year allocation.
     private func measure(_ p: PIPProject) -> Double {
-        (sort == .total ? p.latestTotal : p.currentYearAllocation) ?? 0
+        if selectedYear == 0 {
+            return (sort == .total ? p.latestTotal : p.currentYearAllocation) ?? 0
+        }
+        return (sort == .total ? p.total(edition: selectedYear) : p.ownYearAllocation(edition: selectedYear)) ?? 0
     }
 
     private var measureLabel: String {
-        sort == .total ? "five-year totals" : "this year's allocations"
+        let when = selectedYear == 0 ? "latest budget" : "\(selectedYear) Budget"
+        return sort == .total ? "five-year totals in the \(when)" : "own-year allocations in the \(when)"
     }
 
     private static let palette: [Color] = [
@@ -122,6 +135,10 @@ struct ProjectsView: View {
                         ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    Picker("Budget year", selection: Binding(get: { selectedYear }, set: { year = $0 })) {
+                        ForEach(editions.reversed(), id: \.self) { Text("\(String($0)) Budget").tag($0) }
+                        Text("Latest for each project").tag(0)
+                    }
                     Picker("Programme", selection: $group) {
                         Text("All programmes").tag(String?.none)
                         ForEach(groups, id: \.self) { Text($0).tag(String?.some($0)) }
@@ -158,7 +175,7 @@ struct ProjectsView: View {
 
                 Section("\(filtered.count) projects") {
                     ForEach(filtered.prefix(300)) { p in
-                        NavigationLink(value: p) { ProjectRow(project: p) }
+                        NavigationLink(value: p) { ProjectRow(project: p, year: selectedYear, value: measure(p)) }
                     }
                     if filtered.count > 300 {
                         Text("Showing the first 300 — search to narrow.")
@@ -171,7 +188,9 @@ struct ProjectsView: View {
             }
             .searchable(text: $query, prompt: "Project, agency or PIP number")
             .navigationTitle("Projects")
-            .navigationDestination(for: PIPProject.self) { ProjectDetailView(project: $0) }
+            .navigationDestination(for: PIPProject.self) { p in
+                ProjectDetailView(project: p, initialEdition: selectedYear == 0 ? nil : selectedYear)
+            }
         }
     }
 }
@@ -179,6 +198,11 @@ struct ProjectsView: View {
 private struct ProjectRow: View {
     @Environment(DataStore.self) private var store
     let project: PIPProject
+    /// Budget edition shown; 0 = the project's latest edition.
+    let year: Int
+    let value: Double
+
+    private var edition: Int? { year == 0 ? project.latestEdition : year }
 
     var body: some View {
         HStack {
@@ -191,9 +215,9 @@ private struct ProjectRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(project.latestEdition.map { store.formatted(project.currentYearAllocation, year: $0) } ?? "—")
+                Text(edition.map { store.formatted(value, year: $0) } ?? "—")
                     .font(.subheadline.monospacedDigit())
-                if let e = project.latestEdition {
+                if let e = edition {
                     Text(String(e)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -205,6 +229,11 @@ struct ProjectDetailView: View {
     @Environment(DataStore.self) private var store
     let project: PIPProject
     @State private var edition: Int?
+
+    init(project: PIPProject, initialEdition: Int? = nil) {
+        self.project = project
+        _edition = State(initialValue: initialEdition.flatMap { project.editions.contains($0) ? $0 : nil })
+    }
 
     private var currentEdition: Int? { edition ?? project.latestEdition }
 

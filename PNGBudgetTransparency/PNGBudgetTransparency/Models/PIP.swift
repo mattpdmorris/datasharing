@@ -51,6 +51,13 @@ struct PIPProject: Identifiable, Hashable {
 
     var latestTotal: Double? { latestEdition.flatMap { total(edition: $0) } }
 
+    /// What an edition allocates to its own budget year.
+    func ownYearAllocation(edition: Int) -> Double? {
+        facts.first { $0.edition == edition && $0.refYear == edition }?.value
+    }
+
+    func appears(in edition: Int) -> Bool { facts.contains { $0.edition == edition } }
+
     static func == (l: PIPProject, r: PIPProject) -> Bool { l.id == r.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }

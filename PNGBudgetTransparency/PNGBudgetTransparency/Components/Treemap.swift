@@ -28,7 +28,7 @@ struct Treemap: View {
             let rects = Treemap.squarify(positive.map(\.value),
                                          in: CGRect(origin: .zero, size: geo.size))
             let tiles = zip(positive, rects).map { Placed(item: $0.0, rect: $0.1) }
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 ForEach(tiles) { t in
                     tile(t.item, t.rect)
                 }
@@ -55,9 +55,11 @@ struct Treemap: View {
                 }
             }
             .frame(width: max(rect.width - 2, 0), height: max(rect.height - 2, 0))
-            .offset(x: rect.minX + 1, y: rect.minY + 1)
+            // The tap target must be attached before positioning, so it moves
+            // with the tile (a gesture added after .offset stays at the origin).
             .contentShape(Rectangle())
             .onTapGesture { onTap(item) }
+            .position(x: rect.midX, y: rect.midY)
             .accessibilityElement()
             .accessibilityLabel("\(item.label), \(item.detail)")
             .accessibilityAddTraits(.isButton)

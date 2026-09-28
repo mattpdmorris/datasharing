@@ -7,7 +7,9 @@ struct LensPicker: View {
 
     var body: some View {
         @Bindable var store = store
-        VStack(alignment: .leading, spacing: 8) {
+        // A Group, not a VStack: inside a List each control gets its own row,
+        // so taps can't land on the wrong control.
+        Group {
             Picker("Show as", selection: $store.lens) {
                 ForEach(Lens.allCases) { Text($0.title).tag($0) }
             }

@@ -77,8 +77,7 @@ struct ProjectsView: View {
     ]
 
     /// Agencies as tiles when no agency is chosen; that agency's projects otherwise.
-    private var treemapItems: [TreemapItem] {
-        let list = filtered
+    private func treemapItems(_ list: [PIPProject]) -> [TreemapItem] {
         let total = list.reduce(0) { $0 + measure($1) }
         guard total > 0 else { return [] }
         func detail(_ v: Double) -> String { "\(Fmt.kinaShort(v)) · \(Fmt.percent(v / total))" }
@@ -127,7 +126,9 @@ struct ProjectsView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        // Filter and sort once per update; every section below reuses it.
+        let list = filtered
+        return NavigationStack(path: $path) {
             List {
                 Section {
                     Explainer(text: "Capital and capacity-building projects in the Public Investment Programme, from Budget Volume 3. Each edition prints a five-year profile per project; figures are K million as printed.")
@@ -153,7 +154,7 @@ struct ProjectsView: View {
                     LensPicker()
                 }
 
-                let tiles = treemapItems
+                let tiles = treemapItems(list)
                 if !tiles.isEmpty {
                     Section {
                         Treemap(items: tiles, onTap: tapped)
@@ -173,11 +174,11 @@ struct ProjectsView: View {
                     }
                 }
 
-                Section("\(filtered.count) projects") {
-                    ForEach(filtered.prefix(300)) { p in
+                Section("\(list.count) projects") {
+                    ForEach(list.prefix(300)) { p in
                         NavigationLink(value: p) { ProjectRow(project: p, year: selectedYear, value: measure(p)) }
                     }
-                    if filtered.count > 300 {
+                    if list.count > 300 {
                         Text("Showing the first 300 — search to narrow.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }

@@ -170,6 +170,12 @@ struct BudgetVsOutturnChart: View {
         return out
     }
 
+    /// Years run from the first budget to the last, not from zero.
+    private var yearDomain: ClosedRange<Int> {
+        let ys = rows.map(\.year)
+        return ((ys.min() ?? 2005) - 1)...((ys.max() ?? 2026) + 1)
+    }
+
     var body: some View {
         let pts = points
         Chart {
@@ -199,6 +205,7 @@ struct BudgetVsOutturnChart: View {
             }
         }
         .chartForegroundStyleScale(["Budget": Brand.budget, "Outturn": Brand.outturn])
+        .chartXScale(domain: yearDomain)
         .chartXAxis {
             AxisMarks(values: .stride(by: 4)) { v in
                 AxisGridLine()

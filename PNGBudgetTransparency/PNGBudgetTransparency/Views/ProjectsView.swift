@@ -136,6 +136,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(p.edition == currentEdition ? Brand.red : Color.secondary.opacity(0.35))
                         .symbolSize(p.edition == currentEdition ? 30 : 10)
                 }
+                .chartXScale(domain: ((points.map(\.year).min() ?? 2018) - 1)...((points.map(\.year).max() ?? 2030) + 1))
                 .chartXAxis {
                     AxisMarks(values: .automatic) { v in
                         AxisGridLine()

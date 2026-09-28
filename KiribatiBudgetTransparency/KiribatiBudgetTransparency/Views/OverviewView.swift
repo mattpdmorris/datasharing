@@ -160,6 +160,12 @@ struct BudgetChart: View {
         return out
     }
 
+    /// Years run from the first budget to the last, not from zero.
+    private var yearDomain: ClosedRange<Int> {
+        let ys = years.map(\.year)
+        return ((ys.min() ?? 2011) - 1)...((ys.max() ?? 2026) + 1)
+    }
+
     var body: some View {
         let pts = points
         Chart {
@@ -192,6 +198,7 @@ struct BudgetChart: View {
             }
         }
         .chartForegroundStyleScale(["Budget": Brand.budget, "Revised": Brand.revised, "Actual": Brand.actual])
+        .chartXScale(domain: yearDomain)
         .chartXAxis {
             AxisMarks(values: .stride(by: 3)) { v in
                 AxisGridLine()
@@ -240,6 +247,7 @@ private struct DevFundChart: View {
                 AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.0f%%", d)) } }
             }
         }
+        .chartXScale(domain: (points.map(\.year).min() ?? 2011)...(points.map(\.year).max() ?? 2026))
         .chartXAxis {
             AxisMarks(values: .stride(by: 3)) { v in
                 AxisGridLine()

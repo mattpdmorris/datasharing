@@ -166,6 +166,15 @@ struct AgencyDetailView: View {
         return p
     }
 
+    /// Horizontal position of a series within its year.
+    private func barOffset(_ kind: String) -> Double {
+        switch kind {
+        case "Appropriation": return -0.18
+        case "Actual": return 0.18
+        default: return 0
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -174,13 +183,25 @@ struct AgencyDetailView: View {
                 if agency.isDebtCharges {
                     Explainer(text: "This agency prints gross debt service, including Treasury bill redemptions that are rolled over within the year. Counted as spending it would make the agency budget larger than the whole appropriation, so it is excluded from sector totals by default.")
                 }
+                // Bars are placed explicitly within each year — appropriation on the
+                // left, actual on the right — rather than left to series-name order.
+                let years = agency.years
                 Chart(points) { p in
-                    BarMark(x: .value("Year", String(p.year)), y: .value(store.lens.axisLabel, p.value))
-                        .position(by: .value("Series", p.kind))
+                    BarMark(x: .value("Year", Double(p.year) + barOffset(p.kind)),
+                            y: .value(store.lens.axisLabel, p.value),
+                            width: .fixed(9))
                         .foregroundStyle(by: .value("Series", p.kind))
                 }
                 .chartForegroundStyleScale(["Appropriation": Brand.budget, "Actual": Brand.outturn,
                                             "Projection": Color.secondary.opacity(0.5)])
+                .chartXScale(domain: Double((years.first ?? 2016)) - 0.7 ... Double((years.last ?? 2029)) + 0.7)
+                .chartXAxis {
+                    AxisMarks(values: years.map(Double.init)) { v in
+                        AxisValueLabel {
+                            if let d = v.as(Double.self) { Text("'" + String(Int(d) % 100)) }
+                        }
+                    }
+                }
                 .chartYAxis {
                     AxisMarks { v in
                         AxisGridLine()

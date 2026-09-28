@@ -5,6 +5,7 @@ struct ProjectsView: View {
     @Environment(DataStore.self) private var store
     @State private var query = ""
     @State private var group: String?
+    @State private var agencyCode: String?
     @State private var sort: Sort = .current
 
     enum Sort: String, CaseIterable, Identifiable {
@@ -16,10 +17,24 @@ struct ProjectsView: View {
         Array(Set(store.projects.map(\.group))).sorted()
     }
 
+    /// Executing agencies, keyed by code (names vary slightly across editions),
+    /// with how many projects each runs.
+    private var agencies: [(code: String, name: String, count: Int)] {
+        var names: [String: String] = [:]
+        var counts: [String: Int] = [:]
+        for p in store.projects {
+            names[p.agencyCode] = names[p.agencyCode] ?? p.agency
+            counts[p.agencyCode, default: 0] += 1
+        }
+        return names.map { (code: $0.key, name: $0.value, count: counts[$0.key] ?? 0) }
+            .sorted { $0.name < $1.name }
+    }
+
     private var filtered: [PIPProject] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let list = store.projects.filter { p in
             (group == nil || p.group == group) &&
+            (agencyCode == nil || p.agencyCode == agencyCode) &&
             (q.isEmpty || p.name.lowercased().contains(q) || p.agency.lowercased().contains(q)
                 || p.pipNumber.contains(q) || p.otherNames.contains { $0.lowercased().contains(q) })
         }
@@ -43,6 +58,13 @@ struct ProjectsView: View {
                         Text("All programmes").tag(String?.none)
                         ForEach(groups, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
+                    Picker("Agency", selection: $agencyCode) {
+                        Text("All agencies").tag(String?.none)
+                        ForEach(agencies, id: \.code) { a in
+                            Text("\(a.name) (\(a.count))").tag(String?.some(a.code))
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
                     LensPicker()
                 }
 

@@ -150,19 +150,20 @@ struct AgencyDetailView: View {
     }
 
     private var points: [Point] {
-        agency.years.flatMap { y -> [Point] in
-            var p: [Point] = []
-            func add(_ kind: String, _ v: Double) {
+        var p: [Point] = []
+        for y in agency.years {
+            var raw: [(String, Double)] = []
+            if let a = agency.appropriation(for: y) { raw.append(("Appropriation", a.value)) }
+            if let a = agency.actual(for: y) { raw.append(("Actual", a.value)) }
+            if raw.isEmpty,
+               let pr = agency.facts.filter({ $0.series == .projection && $0.refYear == y }).max(by: { $0.edition < $1.edition }) {
+                raw.append(("Projection", pr.value))
+            }
+            for (kind, v) in raw {
                 if let t = store.transform(v, year: y) { p.append(Point(year: y, kind: kind, value: t)) }
             }
-            if let a = agency.appropriation(for: y) { add("Appropriation", a.value) }
-            if let a = agency.actual(for: y) { add("Actual", a.value) }
-            if agency.appropriation(for: y) == nil, agency.actual(for: y) == nil,
-               let pr = agency.facts.filter({ $0.series == .projection && $0.refYear == y }).max(by: { $0.edition < $1.edition }) {
-                add("Projection", pr.value)
-            }
-            return p
         }
+        return p
     }
 
     var body: some View {

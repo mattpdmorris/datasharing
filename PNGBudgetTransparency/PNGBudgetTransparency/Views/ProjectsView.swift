@@ -6,6 +6,7 @@ struct ProjectsView: View {
     @State private var query = ""
     @State private var group: String?
     @State private var agencyCode: String?
+    @State private var path = NavigationPath()
     @State private var sort: Sort = .current
 
     enum Sort: String, CaseIterable, Identifiable {
@@ -45,8 +46,75 @@ struct ProjectsView: View {
         }
     }
 
+    /// The measure the treemap is sized by: the 5-year total when sorting by it,
+    /// otherwise the latest edition's own-year allocation.
+    private func measure(_ p: PIPProject) -> Double {
+        (sort == .total ? p.latestTotal : p.currentYearAllocation) ?? 0
+    }
+
+    private var measureLabel: String {
+        sort == .total ? "five-year totals" : "this year's allocations"
+    }
+
+    private static let palette: [Color] = [
+        Color(red: 0.72, green: 0.07, blue: 0.14), Color(red: 0.62, green: 0.47, blue: 0.04),
+        Color(red: 0.13, green: 0.36, blue: 0.55), Color(red: 0.20, green: 0.45, blue: 0.30),
+        Color(red: 0.45, green: 0.25, blue: 0.50), Color(red: 0.55, green: 0.30, blue: 0.15),
+        Color(red: 0.25, green: 0.40, blue: 0.45), Color(red: 0.40, green: 0.40, blue: 0.42),
+    ]
+
+    /// Agencies as tiles when no agency is chosen; that agency's projects otherwise.
+    private var treemapItems: [TreemapItem] {
+        let list = filtered
+        let total = list.reduce(0) { $0 + measure($1) }
+        guard total > 0 else { return [] }
+        func detail(_ v: Double) -> String { "\(Fmt.kinaShort(v)) · \(Fmt.percent(v / total))" }
+        let maxTiles = 30
+
+        if agencyCode == nil {
+            var sums: [String: (name: String, value: Double)] = [:]
+            for p in list {
+                let cur = sums[p.agencyCode] ?? (p.agency, 0)
+                sums[p.agencyCode] = (cur.name, cur.value + measure(p))
+            }
+            let ranked = sums.sorted { $0.value.value > $1.value.value }
+            var items = ranked.prefix(maxTiles).enumerated().map { i, e in
+                TreemapItem(id: "agency:" + e.key, label: e.value.name, detail: detail(e.value.value),
+                            value: e.value.value, color: Self.palette[i % Self.palette.count])
+            }
+            let rest = ranked.dropFirst(maxTiles).reduce(0) { $0 + $1.value.value }
+            if rest > 0 {
+                items.append(TreemapItem(id: "other", label: "\(ranked.count - maxTiles) other agencies",
+                                         detail: detail(rest), value: rest, color: .gray))
+            }
+            return items
+        } else {
+            let groupList = groups
+            let ranked = list.sorted { measure($0) > measure($1) }
+            var items = ranked.prefix(maxTiles).map { p in
+                TreemapItem(id: "project:" + p.pipNumber, label: p.name, detail: detail(measure(p)), value: measure(p),
+                            color: Self.palette[(groupList.firstIndex(of: p.group) ?? 0) % Self.palette.count])
+            }
+            let rest = ranked.dropFirst(maxTiles).reduce(0) { $0 + measure($1) }
+            if rest > 0 {
+                items.append(TreemapItem(id: "other", label: "\(ranked.count - maxTiles) other projects",
+                                         detail: detail(rest), value: rest, color: .gray))
+            }
+            return items
+        }
+    }
+
+    private func tapped(_ item: TreemapItem) {
+        if item.id.hasPrefix("agency:") {
+            agencyCode = String(item.id.dropFirst("agency:".count))
+        } else if item.id.hasPrefix("project:"),
+                  let p = store.projects.first(where: { "project:" + $0.pipNumber == item.id }) {
+            path.append(p)
+        }
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     Explainer(text: "Capital and capacity-building projects in the Public Investment Programme, from Budget Volume 3. Each edition prints a five-year profile per project; figures are K million as printed.")
@@ -66,6 +134,26 @@ struct ProjectsView: View {
                     }
                     .pickerStyle(.navigationLink)
                     LensPicker()
+                }
+
+                let tiles = treemapItems
+                if !tiles.isEmpty {
+                    Section {
+                        Treemap(items: tiles, onTap: tapped)
+                            .frame(height: 320)
+                            .padding(.vertical, 4)
+                        if agencyCode != nil {
+                            Button("Show all agencies") { agencyCode = nil }
+                                .font(.subheadline)
+                        }
+                    } header: {
+                        Text(agencyCode == nil ? "Where the money goes, by agency" : "Projects by size")
+                            .textCase(nil)
+                    } footer: {
+                        Text(agencyCode == nil
+                             ? "Each tile is an executing agency, sized by the sum of its projects' \(measureLabel) (K million, as printed). Tap a tile to see that agency's projects."
+                             : "Each tile is a project, sized by its \(measureLabel) and coloured by programme. Tap a tile to open it.")
+                    }
                 }
 
                 Section("\(filtered.count) projects") {

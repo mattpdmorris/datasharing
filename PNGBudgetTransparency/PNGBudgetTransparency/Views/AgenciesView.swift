@@ -48,6 +48,12 @@ struct AgenciesView: View {
                 }
 
                 Section {
+                    Picker("Sector", selection: $sector) {
+                        Text("All sectors").tag(String?.none)
+                        ForEach(store.sectors, id: \.self) { s in
+                            Text(s).tag(String?.some(s))
+                        }
+                    }
                     Picker("Sort", selection: $sort) {
                         ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
                     }

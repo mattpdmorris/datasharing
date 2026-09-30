@@ -147,52 +147,38 @@ private struct DonorRow: View {
     }
 }
 
-/// One donor's pledges and payments for every replenishment period, as a table.
+/// One donor's pledges and payments for every replenishment period: a grouped
+/// bar chart (tap a period for its figures), totals, and an optional table.
 private struct DonorHistorySection: View {
     let donor: String
     let rows: [PledgeRow]
     let onClose: () -> Void
 
-    private var periods: [PledgeRow] { rows.sorted { $0.period > $1.period } }
+    @State private var selectedPeriod: String?
+    @State private var showTable = false
+
+    /// Oldest first, so the chart reads left to right in time.
+    private var chronological: [PledgeRow] { rows.sorted { $0.period < $1.period } }
     private var pledged: Double { rows.reduce(0) { $0 + $1.pledged } }
     private var paid: Double { rows.reduce(0) { $0 + $1.contributed } }
 
     var body: some View {
         Section {
-            Grid(alignment: .trailing, horizontalSpacing: 12, verticalSpacing: 8) {
+            chart
+                .frame(height: 220)
+                .padding(.vertical, 8)
+
+            Grid(alignment: .leading, horizontalSpacing: 16) {
                 GridRow {
-                    Text("Period").gridColumnAlignment(.leading)
-                    Text("Pledged")
-                    Text("Paid")
-                    Text("% paid")
+                    StatTile(title: "Pledged", value: pledged.usdCompact)
+                    StatTile(title: "Paid", value: paid.usdCompact)
+                    StatTile(title: "% paid", value: share(paid, of: pledged))
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-                Divider()
-
-                ForEach(periods) { row in
-                    GridRow {
-                        Text(row.period)
-                        Text(row.pledged.usdCompact)
-                        Text(row.contributed.usdCompact)
-                        Text(share(row.contributed, of: row.pledged))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Divider()
-
-                GridRow {
-                    Text("Total")
-                    Text(pledged.usdCompact)
-                    Text(paid.usdCompact)
-                    Text(share(paid, of: pledged))
-                }
-                .fontWeight(.semibold)
             }
-            .font(.subheadline.monospacedDigit())
-            .padding(.vertical, 4)
+
+            DisclosureGroup("Show as table", isExpanded: $showTable) {
+                table
+            }
         } header: {
             HStack {
                 Text(donor)
@@ -209,9 +195,75 @@ private struct DonorHistorySection: View {
             }
         } footer: {
             if let type = rows.first?.donorType {
-                Text("\(type) · US dollars at the Global Fund reference rate. Paid is contributions received to date for each period's pledge.")
+                Text("\(type) · US dollars at the Global Fund reference rate. Tap a period to see its figures. Paid is contributions received to date against that period's pledge.")
             }
         }
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(chronological) { row in
+                BarMark(x: .value("Period", row.period), y: .value("USD", row.pledged))
+                    .foregroundStyle(by: .value("Measure", "Pledged"))
+                    .position(by: .value("Measure", "Pledged"))
+                    .cornerRadius(3)
+                BarMark(x: .value("Period", row.period), y: .value("USD", row.contributed))
+                    .foregroundStyle(by: .value("Measure", "Paid"))
+                    .position(by: .value("Measure", "Paid"))
+                    .cornerRadius(3)
+            }
+            if let period = selectedPeriod, let row = chronological.first(where: { $0.period == period }) {
+                RuleMark(x: .value("Period", period))
+                    .foregroundStyle(Color.secondary.opacity(0.25))
+                    .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        callout(for: row)
+                    }
+            }
+        }
+        .chartForegroundStyleScale(["Pledged": Color.accentColor.opacity(0.35), "Paid": Color.accentColor])
+        .chartXSelection(value: $selectedPeriod)
+        .usdYAxis()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(donor) pledged and paid by replenishment period")
+    }
+
+    private func callout(for row: PledgeRow) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(row.period).font(.caption.weight(.semibold))
+            Text("Pledged \(row.pledged.usdCompact)")
+            Text("Paid \(row.contributed.usdCompact) · \(share(row.contributed, of: row.pledged))")
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.primary)
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var table: some View {
+        Grid(alignment: .trailing, horizontalSpacing: 12, verticalSpacing: 8) {
+            GridRow {
+                Text("Period").gridColumnAlignment(.leading)
+                Text("Pledged")
+                Text("Paid")
+                Text("% paid")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+            Divider()
+
+            ForEach(chronological.reversed()) { row in
+                GridRow {
+                    Text(row.period)
+                    Text(row.pledged.usdCompact)
+                    Text(row.contributed.usdCompact)
+                    Text(share(row.contributed, of: row.pledged))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.subheadline.monospacedDigit())
+        .padding(.vertical, 4)
     }
 
     private func share(_ part: Double, of whole: Double) -> String {
